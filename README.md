@@ -48,8 +48,25 @@ python main.py
 | `SEARCH <keyword>` | 메시지에 키워드가 포함된 커밋 검색 |
 | `SEARCH --author=<name>` | 작성자의 커밋 검색 |
 
-에러 메시지: `Invalid args`, `Unknown branch: <name>`, `Unknown commit: <hash>`,
-`Unknown command: <name>`, `Branch already exists: <name>`
+에러 메시지
+
+| 메시지 | 나오는 경우 |
+| --- | --- |
+| `Invalid args` | 인자 개수나 옵션 형식이 틀림, 따옴표를 닫지 않음 |
+| `Unknown command: <name>` | 없는 명령어 |
+| `Unknown branch: <name>` | 없는 브랜치로 `SWITCH` |
+| `Unknown commit: <hash>` | 없는 hash로 `PATH` / `ANCESTORS` |
+| `Branch already exists: <name>` | 이미 있는 이름으로 `BRANCH` |
+| `Not initialized. Run: INIT <user_name>` | `INIT` 전에 다른 명령 입력 |
+
+결과가 없을 때의 출력
+
+| 출력 | 나오는 경우 |
+| --- | --- |
+| `No commits` | 커밋이 하나도 없을 때 `LOG` |
+| `No ancestors` | 부모가 없는 커밋에 `ANCESTORS` |
+| `No path` | 두 커밋이 연결되어 있지 않을 때 `PATH` |
+| `Found 0 commit(s):` | 일치하는 커밋이 없을 때 `SEARCH` |
 
 ## 실행 예시
 
@@ -211,7 +228,7 @@ flowchart LR
 | c3 처리 후 | `[]` | `[c1, c2, c3]` | 큐가 비어 종료 |
 
 부모가 여러 개라면 모든 부모를 처리한 뒤에야 큐에 들어갑니다.
-따라서 자식이 부모보다 먼저 출력되지 않습니다. 시간복잡도는 **O(V + E)**입니다.
+따라서 자식이 부모보다 먼저 출력되지 않습니다. 시간복잡도는 **O(V + E)** 입니다.
 `V`는 커밋 수, `E`는 부모 연결 수입니다.
 
 ### 2. PATH: BFS로 간선 수가 가장 적은 경로 찾기
@@ -225,7 +242,7 @@ flowchart LR
     c1 --- c3["c3: 도착<br/>목표까지 거리 0"]
 ```
 
-**BFS(너비 우선 탐색)**는 큐를 이용해 가까운 노드부터 차례로 방문합니다.
+**BFS**(너비 우선 탐색)는 큐를 이용해 가까운 노드부터 차례로 방문합니다.
 모든 간선의 비용이 1이므로, 처음 방문했을 때의 거리가 최소 간선 수입니다.
 코드에서는 도착점인 c3에서 BFS를 시작합니다.
 
@@ -263,7 +280,7 @@ flowchart LR
 거리가 1 줄어드는 이웃 중 사전순으로 가장 작은 hash를 고릅니다.
 두 경로 모두 길이는 2이고, 처음 달라지는 hash에서 `0000002 < 0000003`이므로
 첫 번째 경로를 선택합니다. 현재 hash는 모두 같은 길이의 7자리 문자열입니다.
-시간복잡도는 거리 계산과 경로 복원을 합쳐 **O(V + E)**입니다.
+시간복잡도는 거리 계산과 경로 복원을 합쳐 **O(V + E)** 입니다.
 
 ### 3. ANCESTORS: 부모 방향으로만 BFS
 
