@@ -1,24 +1,7 @@
 """
-Mini Git (쉽게 읽는 버전)
+Mini Git
 
 실행하는 법:  python main.py
-
-이 프로그램은 게임의 "세이브 포인트"를 기록하는 공책이에요.
-
-  커밋(commit)   = 세이브 포인트 하나
-  부모(parent)   = 바로 전에 만든 세이브 포인트
-  브랜치(branch) = 세이브 포인트에 붙이는 이름표
-  HEAD           = 지금 내가 쓰고 있는 이름표
-
-책처럼 위에서부터 차례대로 읽으면 돼요.
-
-  1장. 세이브 포인트(커밋)
-  2장. 찾아보기(역색인)
-  3장. 저장소
-  4장. 줄 세우기(정렬)
-  5장. 길 찾기(탐색)
-  6장. 명령어 알아듣기
-  7장. 프로그램 시작
 """
 
 import hashlib
@@ -27,37 +10,35 @@ from datetime import datetime
 
 
 class MiniGitError(Exception):
-    """사용자가 잘못 입력했을 때 쓰는 에러예요. 에러 메시지가 그대로 화면에 나와요."""
+    """잘못된 입력에 대한 에러. 에러 메시지가 그대로 화면에 출력된다."""
 
 
 # =====================================================================
-# 1장. 세이브 포인트(커밋)
+# 1장. 커밋
 # =====================================================================
 
 class Commit:
-    """세이브 포인트 하나. 한 번 만들면 내용을 바꾸지 않아요."""
+    """커밋 그래프의 노드. 한 번 만들면 내용을 바꾸지 않는다."""
 
     def __init__(self, commit_hash, message, author, timestamp, parents, branch):
-        self.hash = commit_hash    # 번호 (예: "2edb318")
-        self.message = message     # 무엇을 했는지 적은 메모
-        self.author = author       # 만든 사람
-        self.timestamp = timestamp # 만든 시각
-        self.parents = parents     # 바로 전 세이브 포인트들의 번호 목록
-        self.branch = branch       # 만들 때 쓰던 이름표
+        self.hash = commit_hash    # 커밋 식별자 (예: "2edb318")
+        self.message = message     # 커밋 메시지
+        self.author = author       # 작성자
+        self.timestamp = timestamp # 커밋 생성 시각
+        self.parents = parents     # 부모 커밋의 hash 목록 (0개 이상)
+        self.branch = branch       # 커밋을 만들 때의 브랜치 이름 (출력용)
 
 
 class HashMaker:
-    """커밋마다 겹치지 않는 7글자 번호를 만들어요.
+    """세션 전체에서 중복되지 않는 7자리 커밋 hash 를 만든다.
 
-    만드는 방법:
-      "몇 번째:누가:메모" 라는 글자를 SHA-1 이라는 '지문 기계'에 넣으면
-      긴 지문이 나와요. 그중 앞 7글자만 번호로 써요.
-      혹시 전에 나온 번호와 같으면, 몇 번째를 하나 올려서 다시 만들어요.
+    "카운터:작성자:메시지" 문자열의 SHA-1 해시값에서 앞 7자리를 사용한다.
+    이미 사용한 hash 와 같으면 카운터를 증가시켜 다시 만든다.
     """
 
     def __init__(self):
         self.count = 0
-        self.used = set()  # 지금까지 나눠 준 번호들
+        self.used = set()  # 지금까지 사용한 hash
 
     def make(self, author, message):
         while True:
@@ -70,13 +51,13 @@ class HashMaker:
 
 
 # =====================================================================
-# 2장. 찾아보기(역색인)
+# 2장. 역색인
 # =====================================================================
 
 def split_into_words(text):
-    """'Add Login login' -> ['add', 'login']
+    """문자열을 키워드 목록으로 바꾼다. 예: 'Add Login login' -> ['add', 'login']
 
-    공백으로 자르고, 모두 소문자로 바꾸고, 같은 단어는 한 번만 남겨요.
+    공백 기준으로 분리하고, 소문자로 정규화하고, 중복 단어는 제거한다.
     """
     words = []
     for word in text.lower().split():
@@ -86,21 +67,21 @@ def split_into_words(text):
 
 
 class SearchBook:
-    """책 맨 뒤에 있는 '찾아보기'와 같아요.
+    """역색인(Inverted Index): 키워드 / 작성자 -> 커밋 hash 목록.
 
-    책을 처음부터 끝까지 넘기지 않아도, 찾아보기에서 단어를 찾으면
-    몇 쪽에 있는지 바로 알 수 있죠. 여기서는 커밋을 만들 때마다
-    '단어 -> 그 단어가 들어간 커밋 번호들'을 미리 적어 둬요.
+    커밋을 만들 때마다 색인을 갱신해 두고, 검색할 때는 모든 커밋을
+    순회(O(N))하지 않고 딕셔너리 조회(평균 O(1))로 후보를 바로 가져온다.
 
       words   = {"login": ["2edb318"], "add": ["2edb318", "3ef0563"], ...}
       authors = {"Alice": ["ffefc7d", "2edb318", "3ef0563"]}
     """
 
     def __init__(self):
-        self.words = {}    # 단어 -> 커밋 번호 목록
-        self.authors = {}  # 만든 사람 -> 커밋 번호 목록
+        self.words = {}    # 키워드 -> 커밋 hash 목록
+        self.authors = {}  # 작성자 -> 커밋 hash 목록
 
     def add(self, commit):
+        """커밋의 메시지 키워드와 작성자를 색인에 등록한다."""
         for word in split_into_words(commit.message):
             if word not in self.words:
                 self.words[word] = []
@@ -111,15 +92,15 @@ class SearchBook:
         self.authors[commit.author].append(commit.hash)
 
     def find_by_words(self, text):
-        """적은 단어가 '모두' 들어 있는 커밋 번호들을 돌려줘요."""
+        """text 의 모든 키워드가 메시지에 포함된 커밋의 hash 목록을 반환한다."""
         words = split_into_words(text)
         if len(words) == 0:
             return []
 
-        # 첫 단어가 들어간 커밋들에서 시작해서,
+        # 첫 번째 키워드의 후보 목록에서 시작한다.
         found = self.words.get(words[0], [])
 
-        # 다음 단어가 없는 커밋은 하나씩 빼요.
+        # 나머지 키워드를 포함하지 않는 커밋을 후보에서 제외한다 (교집합).
         for word in words[1:]:
             has_this_word = set(self.words.get(word, []))
             still_found = []
@@ -131,7 +112,7 @@ class SearchBook:
         return list(found)
 
     def find_by_author(self, author):
-        """그 사람이 만든 커밋 번호들 (이름의 대문자/소문자를 구분해요)."""
+        """해당 작성자의 커밋 hash 목록을 반환한다. (이름은 대소문자를 구분한다)"""
         return list(self.authors.get(author, []))
 
 
@@ -140,47 +121,45 @@ class SearchBook:
 # =====================================================================
 
 class Repository:
-    """세이브 포인트와 이름표를 모두 적어 두는 공책이에요.
+    """커밋 그래프와 브랜치를 관리하는 저장소.
 
-    왜 커밋은 '빙글빙글 도는 길'(사이클)을 만들 수 없을까요?
-      새 커밋은 '이미 있는' 커밋만 부모로 가질 수 있어요.
-      그래서 화살표는 언제나 과거 쪽으로만 가요.
-      과거로만 가면 출발한 곳으로 다시 돌아올 수 없죠.
-      이런 그래프를 DAG(방향은 있고, 도는 길은 없는 그래프)라고 해요.
+    새 커밋은 이미 존재하는 커밋만 부모로 가질 수 있다. 따라서 간선은 항상
+    과거의 커밋을 향하고, 간선을 따라가서 출발한 커밋으로 돌아오는 사이클이
+    생기지 않는다. 그래서 커밋 그래프는 항상 DAG(방향성 비순환 그래프)이다.
     """
 
     def __init__(self, author, hash_maker):
         self.author = author
-        self.commits = {}                # 번호 -> 커밋 (번호만 알면 바로 꺼내요)
-        self.children = {}               # 번호 -> 자식 커밋 번호 목록
-        self.branches = {"main": None}   # 이름표 -> 붙어 있는 커밋 번호 (아직 없으면 None)
-        self.current_branch = "main"     # HEAD: 지금 쓰고 있는 이름표
+        self.commits = {}                # hash -> 커밋 (해시맵, 평균 O(1) 조회)
+        self.children = {}               # hash -> 자식 커밋의 hash 목록
+        self.branches = {"main": None}   # 브랜치 이름 -> 가리키는 커밋 hash (커밋이 없으면 None)
+        self.current_branch = "main"     # HEAD: 현재 브랜치 이름
         self.search_book = SearchBook()
         self.hash_maker = hash_maker
 
     def make_branch(self, name):
-        """지금 이름표가 붙은 커밋에 새 이름표를 하나 더 붙여요."""
+        """현재 커밋(HEAD)을 가리키는 새 브랜치를 만든다."""
         if name in self.branches:
             raise MiniGitError(f"Branch already exists: {name}")
         self.branches[name] = self.branches[self.current_branch]
 
     def switch_branch(self, name):
-        """다른 이름표로 갈아타요."""
+        """HEAD 를 지정한 브랜치로 이동한다."""
         if name not in self.branches:
             raise MiniGitError(f"Unknown branch: {name}")
         self.current_branch = name
 
     def make_commit(self, message):
-        """새 세이브 포인트를 만들어요.
+        """현재 HEAD 를 부모로 하는 새 커밋을 만든다.
 
-        1. 지금 이름표가 붙은 커밋을 부모로 삼아요.
-        2. 새 커밋을 공책에 적고, 부모의 자식 목록에도 적어요.
-        3. 이름표를 새 커밋으로 옮겨 붙여요.
-        4. 찾아보기에도 적어요.
+        1. 현재 브랜치가 가리키는 커밋을 부모로 정한다.
+        2. 새 커밋을 저장하고, 부모의 자식 목록에 추가한다.
+        3. 현재 브랜치가 새 커밋을 가리키도록 옮긴다.
+        4. 역색인을 갱신한다.
         """
         parent = self.branches[self.current_branch]
         if parent is None:
-            parents = []          # 첫 커밋은 부모가 없어요
+            parents = []          # 첫 커밋은 부모가 없다
         else:
             parents = [parent]
 
@@ -203,36 +182,37 @@ class Repository:
         return commit
 
     def get_commit(self, commit_hash):
-        """번호로 커밋을 꺼내요. 없는 번호면 에러."""
+        """hash 로 커밋을 조회한다. 없는 hash 이면 에러를 발생시킨다."""
         if commit_hash not in self.commits:
             raise MiniGitError(f"Unknown commit: {commit_hash}")
         return self.commits[commit_hash]
 
 
 # =====================================================================
-# 4장. 줄 세우기(정렬) - 병합 정렬
+# 4장. 정렬 (병합 정렬)
 # =====================================================================
 #
-# 섞인 카드 더미를 정리하는 방법이에요.
+# sorted() 와 list.sort() 를 사용하지 않고 직접 구현한 병합 정렬이다.
 #
-#   1. 더미를 반으로 나눠요. 카드가 1장이 될 때까지 계속 나눠요.
-#   2. 정리된 작은 더미 두 개를 맨 위 카드끼리 비교하면서,
-#      더 작은 카드를 먼저 내려놓아 하나로 합쳐요.
+#   1. 목록을 절반으로 나눈다. 원소가 1개가 될 때까지 반복한다.
+#   2. 정렬된 두 목록의 맨 앞 원소끼리 비교하면서,
+#      더 작은 원소를 먼저 꺼내 하나의 목록으로 합친다.
 #
 #   [4, 1, 3, 2] -> [4, 1] [3, 2] -> [4] [1] [3] [2]
 #                -> [1, 4] [2, 3] -> [1, 2, 3, 4]
 #
-# - 카드가 n장이면 약 n x log(n) 번 일해요. (운이 나빠도 똑같아요)
-# - 값이 같으면 원래 순서를 그대로 지켜요. 이것을 '안정 정렬'이라고 해요.
+# - 시간복잡도: 평균과 최악 모두 O(n log n)
+# - 안정 정렬: 값이 같은 원소는 원래 순서를 유지한다.
 
 def sort_value(commit, sort_by):
-    """무엇을 기준으로 비교할지 골라요. "date" 면 시각, "author" 면 이름."""
+    """정렬 기준에 따라 비교할 값을 반환한다. "date" 는 생성 시각, "author" 는 작성자 이름."""
     if sort_by == "date":
         return commit.timestamp
     return commit.author
 
 
 def merge_sort(commits, sort_by):
+    """커밋 목록을 sort_by 기준 오름차순으로 정렬한 새 목록을 반환한다."""
     if len(commits) <= 1:
         return list(commits)
 
@@ -243,13 +223,13 @@ def merge_sort(commits, sort_by):
 
 
 def merge(left, right, sort_by):
-    """정리된 두 더미를 하나로 합쳐요."""
+    """정렬된 두 목록을 하나의 정렬된 목록으로 합친다."""
     result = []
-    i = 0  # 왼쪽 더미에서 지금 보는 카드
-    j = 0  # 오른쪽 더미에서 지금 보는 카드
+    i = 0  # left 에서 비교할 위치
+    j = 0  # right 에서 비교할 위치
 
     while i < len(left) and j < len(right):
-        # 같으면 왼쪽을 먼저 놓아요. 그래서 원래 순서가 지켜져요.
+        # 값이 같으면 왼쪽 원소를 먼저 넣는다. 그래서 안정 정렬이 된다.
         if sort_value(left[i], sort_by) <= sort_value(right[j], sort_by):
             result.append(left[i])
             i += 1
@@ -257,29 +237,30 @@ def merge(left, right, sort_by):
             result.append(right[j])
             j += 1
 
-    # 한쪽이 다 떨어지면, 남은 카드는 그대로 뒤에 붙여요.
+    # 한쪽 목록이 끝나면 다른 쪽에 남은 원소를 그대로 뒤에 붙인다.
     result.extend(left[i:])
     result.extend(right[j:])
     return result
 
 
 # =====================================================================
-# 5장. 길 찾기(탐색)
+# 5장. 그래프 탐색
 # =====================================================================
 #
-# 세 함수 모두 '줄(line)'을 써요. 줄 맨 앞부터 한 명씩 처리하고,
-# 새로 찾은 커밋은 줄 맨 뒤에 세워요. 그래서 가까운 것부터 차례로 처리돼요.
+# 세 탐색 함수 모두 큐(먼저 넣은 것을 먼저 꺼내는 자료구조)를 사용한다.
+# 큐는 리스트 line 과 다음에 처리할 위치 position 으로 구현한다.
+# 앞에서 원소를 삭제하지 않고 position 만 옮기므로 꺼내는 비용이 O(1)이다.
+# 시간복잡도는 모두 O(V + E)이다. (V: 커밋 수, E: 부모 연결 수)
 
 def parent_first_order(repo):
-    """부모가 항상 자식보다 먼저 나오도록 줄을 세워요. (위상 정렬)
+    """부모가 항상 자식보다 먼저 나오는 hash 순서를 반환한다. (위상 정렬, Kahn 알고리즘)
 
-    규칙: '아직 줄에 서지 않은 부모'가 0명인 커밋만 줄에 설 수 있어요.
-      1. 부모가 없는 커밋부터 줄에 세워요.
-      2. 줄 앞에서부터 한 명씩 보면서, 그 커밋의 자식들에게
-         "네 부모 한 명이 줄에 섰어" 하고 알려 줘요 (기다리는 수 - 1).
-      3. 기다리는 부모가 0명이 된 자식은 줄 뒤에 서요.
+    아직 처리되지 않은 부모의 수(진입 차수)가 0인 커밋만 큐에 넣을 수 있다.
+      1. 부모가 없는 커밋을 큐에 넣는다.
+      2. 큐에서 커밋을 하나씩 꺼내, 그 자식들의 남은 부모 수를 1 줄인다.
+      3. 남은 부모 수가 0이 된 자식을 큐에 넣는다.
     """
-    waiting = {}  # 커밋 번호 -> 아직 줄에 서지 않은 부모 수
+    waiting = {}  # 커밋 hash -> 아직 처리되지 않은 부모 수
     for commit_hash, commit in repo.commits.items():
         waiting[commit_hash] = len(commit.parents)
 
@@ -297,20 +278,19 @@ def parent_first_order(repo):
             if waiting[child] == 0:
                 line.append(child)
 
-    return line  # 줄 선 순서가 곧 출력 순서예요
+    return line  # 큐에 들어간 순서가 곧 출력 순서이다
 
 
 def neighbors(repo, commit_hash):
-    """부모와 자식 모두 '이웃'이에요. 길 찾기에서는 화살표 방향을 무시해요."""
+    """부모와 자식을 모두 이웃으로 반환한다. (간선을 무방향으로 볼 때 사용)"""
     return repo.commits[commit_hash].parents + repo.children[commit_hash]
 
 
 def count_steps_from(repo, start):
-    """start 에서 각 커밋까지 몇 걸음인지 세요. (너비 우선 탐색, BFS)
+    """start 에서 각 커밋까지의 최소 간선 수를 구한다. (너비 우선 탐색, BFS)
 
-    연못에 돌을 던지면 물결이 1칸, 2칸, 3칸... 퍼지죠?
-    그것처럼 가까운 커밋부터 차례로 걸음 수를 적어요.
-    물결이 닿지 않은 커밋은 연결되어 있지 않은 거예요.
+    가까운 커밋부터 차례로 방문하므로, 처음 방문했을 때의 거리가 최단 거리이다.
+    결과에 없는 커밋은 start 와 연결되어 있지 않은 커밋이다.
     """
     steps = {start: 0}
     line = [start]
@@ -326,16 +306,17 @@ def count_steps_from(repo, start):
 
 
 def find_shortest_path(repo, start, goal):
-    """start 에서 goal 까지 가장 적은 걸음으로 가는 길. 길이 없으면 None.
+    """start 에서 goal 까지의 최단 경로(간선 수 최소)를 반환한다. 경로가 없으면 None.
 
-      1. goal 에서 물결을 퍼뜨려 '도착까지 몇 걸음'을 적어요.
-      2. start 에서 출발해서, 한 걸음 더 가까워지는 이웃으로 이동해요.
-         그런 이웃이 여러 개면 번호가 가장 작은 쪽으로 가요.
-         (그러면 길을 "a -> b -> c" 글자로 썼을 때 사전 순서로 가장 앞서는 길이 돼요)
+      1. goal 에서 BFS 를 수행해 모든 커밋의 'goal 까지 거리'를 구한다.
+      2. start 에서 출발해 거리가 1 줄어드는 이웃으로 이동한다.
+         그런 이웃이 여러 개면 hash 가 가장 작은 이웃을 선택한다.
+         (hash 길이가 모두 같으므로, 경로를 "a->b->c" 문자열로 만들었을 때
+          사전순으로 가장 작은 경로가 된다)
     """
     steps_to_goal = count_steps_from(repo, goal)
     if start not in steps_to_goal:
-        return None  # 물결이 start 까지 오지 못했어요
+        return None  # start 와 goal 이 연결되어 있지 않다
 
     path = [start]
     current = start
@@ -351,10 +332,10 @@ def find_shortest_path(repo, start, goal):
 
 
 def find_ancestors(repo, start):
-    """부모, 부모의 부모, ... 를 모두 찾아요. 족보를 거슬러 올라가는 것과 같아요.
+    """start 에서 부모 방향으로 도달 가능한 모든 조상의 hash 목록을 반환한다. (BFS)
 
-    부모가 두 명인 커밋도 있을 수 있어서, 같은 조상을 두 번 만날 수 있어요.
-    그래서 이미 찾은 커밋은 '찾았음(found)' 표시를 해서 한 번만 적어요.
+    부모가 여러 개인 커밋이 있으면 같은 조상에 여러 경로로 도달할 수 있다.
+    방문한 커밋을 집합(found)에 기록해 각 조상을 한 번만 결과에 넣는다.
     """
     found = set()
     ancestors = []
@@ -372,26 +353,27 @@ def find_ancestors(repo, start):
 
 
 # =====================================================================
-# 6장. 명령어 알아듣기
+# 6장. 명령어 처리
 # =====================================================================
 
 ALL_COMMANDS = ("init", "branch", "switch", "commit", "log", "path", "ancestors", "search")
 
 
 def need_args(args, count):
-    """인자 개수가 맞는지 확인해요. 틀리면 'Invalid args'."""
+    """인자 개수를 확인한다. 맞지 않으면 'Invalid args' 에러를 발생시킨다."""
     if len(args) != count:
         raise MiniGitError("Invalid args")
 
 
 def commit_to_text(commit):
-    """커밋 하나를 화면에 보여 줄 글자로 바꿔요."""
+    """커밋 하나를 로그 출력 형식의 문자열로 바꾼다."""
     time_text = commit.timestamp.strftime("%Y-%m-%d %H:%M:%S")
     return (f"commit {commit.hash} ({commit.author}, {time_text}) [{commit.branch}]\n"
             f"    {commit.message}")
 
 
 def commits_to_text(commits, text_if_empty):
+    """커밋 목록을 출력 문자열로 바꾼다. 목록이 비어 있으면 text_if_empty 를 반환한다."""
     if len(commits) == 0:
         return text_if_empty
     lines = []
@@ -401,26 +383,27 @@ def commits_to_text(commits, text_if_empty):
 
 
 class MiniGit:
-    """명령어 한 줄을 받아서 실행하고, 화면에 보여 줄 글자를 돌려줘요."""
+    """명령어 한 줄을 파싱해 실행하고, 출력할 문자열을 반환한다."""
 
     def __init__(self):
-        self.repo = None  # INIT 하기 전에는 공책이 없어요
-        # 번호 기계는 하나만 만들어서 계속 써요.
-        # 그래야 INIT 을 다시 해도 전에 나온 번호가 또 나오지 않아요.
+        self.repo = None  # INIT 전에는 저장소가 없다
+        # HashMaker 는 하나만 만들어 계속 사용한다.
+        # INIT 으로 저장소를 새로 만들어도 이전에 사용한 hash 가 다시 나오지 않는다.
         self.hash_maker = HashMaker()
 
     def run_command(self, line):
-        # shlex.split 은 따옴표로 묶은 말을 한 덩어리로 잘라 줘요.
+        """명령어 한 줄을 실행하고 결과 문자열을 반환한다."""
+        # shlex.split 은 따옴표로 감싼 인자를 하나의 토큰으로 분리한다.
         #   'commit "Add login"'  ->  ['commit', 'Add login']
         try:
             words = shlex.split(line)
-        except ValueError:  # 따옴표를 닫지 않았을 때
+        except ValueError:  # 따옴표를 닫지 않은 경우
             return "Invalid args"
 
         if len(words) == 0:
             return ""
 
-        name = words[0].lower()  # INIT, init, Init 모두 같은 명령으로 봐요
+        name = words[0].lower()  # 명령어는 대소문자를 구분하지 않는다
         args = words[1:]
 
         if name not in ALL_COMMANDS:
@@ -448,6 +431,7 @@ class MiniGit:
             return str(error)
 
     def init(self, args):
+        """INIT <user_name>: 저장소를 초기화하고 사용자를 설정한다."""
         need_args(args, 1)
         self.repo = Repository(args[0], self.hash_maker)
         return ("Initialized repository.\n"
@@ -455,29 +439,33 @@ class MiniGit:
                 f"Current user: {self.repo.author}")
 
     def branch(self, args):
+        """BRANCH <branch_name>: 현재 커밋을 가리키는 브랜치를 만든다."""
         need_args(args, 1)
         self.repo.make_branch(args[0])
         return f"Created branch: {args[0]}"
 
     def switch(self, args):
+        """SWITCH <branch_name>: HEAD 를 해당 브랜치로 이동한다."""
         need_args(args, 1)
         self.repo.switch_branch(args[0])
         return f"Switched to branch: {args[0]}"
 
     def commit(self, args):
+        """COMMIT <message>: 현재 HEAD 를 부모로 하는 커밋을 만든다."""
         need_args(args, 1)
         commit = self.repo.make_commit(args[0])
         return f"[{commit.branch} {commit.hash}] {commit.message}"
 
     def log(self, args):
-        # LOG 만 쓰면: 부모가 먼저 나오는 순서
+        """LOG: 부모 우선 순서로 출력한다. LOG --sort-by=date|author: 정렬해서 출력한다."""
+        # 옵션이 없으면 위상 정렬 순서로 출력한다.
         if len(args) == 0:
             commits = []
             for commit_hash in parent_first_order(self.repo):
                 commits.append(self.repo.commits[commit_hash])
             return commits_to_text(commits, "No commits")
 
-        # LOG --sort-by=date 또는 LOG --sort-by=author
+        # --sort-by=date 또는 --sort-by=author
         need_args(args, 1)
         option = args[0].lower()
         if option == "--sort-by=date":
@@ -491,6 +479,7 @@ class MiniGit:
         return commits_to_text(merge_sort(all_commits, sort_by), "No commits")
 
     def path(self, args):
+        """PATH <commit1> <commit2>: 두 커밋 사이의 최단 경로를 출력한다."""
         need_args(args, 2)
         start = self.repo.get_commit(args[0])
         goal = self.repo.get_commit(args[1])
@@ -501,6 +490,7 @@ class MiniGit:
         return "Path: " + " -> ".join(path)
 
     def ancestors(self, args):
+        """ANCESTORS <commit_hash>: 해당 커밋의 모든 조상을 출력한다."""
         need_args(args, 1)
         commit = self.repo.get_commit(args[0])
 
@@ -510,16 +500,17 @@ class MiniGit:
         return commits_to_text(ancestors, "No ancestors")
 
     def search(self, args):
+        """SEARCH <keyword> 또는 SEARCH --author=<name>: 역색인으로 커밋을 검색한다."""
         need_args(args, 1)
         text = args[0]
 
-        # SEARCH --author=Alice  ->  만든 사람으로 찾기
+        # --author=<name> 이면 작성자로 검색한다.
         if text.lower().startswith("--author="):
             author = text[len("--author="):]
             if author == "":
                 raise MiniGitError("Invalid args")
             found = self.repo.search_book.find_by_author(author)
-        # SEARCH login  ->  메모 속 단어로 찾기
+        # 그 외에는 커밋 메시지의 키워드로 검색한다.
         else:
             found = self.repo.search_book.find_by_words(text)
 
@@ -534,13 +525,13 @@ class MiniGit:
 # =====================================================================
 
 def main():
-    """명령어를 받고 -> 실행하고 -> 결과를 보여 주기를 계속 반복해요.
-    exit 또는 quit 를 입력하면 끝나요."""
+    """REPL: 명령어 입력 -> 실행 -> 결과 출력을 반복한다.
+    exit 또는 quit 를 입력하면 종료한다."""
     mini_git = MiniGit()
     while True:
         try:
             line = input("mini-git> ")
-        except EOFError:  # 더 읽을 입력이 없을 때
+        except EOFError:  # 더 읽을 입력이 없는 경우
             break
 
         if line.strip().lower() in ("exit", "quit"):
