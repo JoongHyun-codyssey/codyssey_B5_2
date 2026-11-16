@@ -124,18 +124,18 @@ Found 1 commit(s):
 코드는 `main.py` 한 파일이고, 1장부터 7장까지 위에서 아래로 읽는 순서로 배치했습니다.
 알고리즘(역색인, 정렬, 탐색)은 각각 독립된 클래스와 함수로 분리되어 있습니다.
 
-| 장 | 클래스 / 함수 | 하는 일 | 과제 용어 |
-| --- | --- | --- | --- |
-| 1장 | `Commit` | 커밋 하나의 정보 | 커밋 노드 |
-| 1장 | `HashMaker` | 겹치지 않는 hash 생성 | hash 유일성 |
-| 2장 | `SearchBook`, `split_into_words` | 단어 / 작성자 → 커밋 hash 목록 | 역색인 |
-| 3장 | `Repository` | 커밋 저장, 브랜치와 HEAD 관리 | 커밋 저장소 |
-| 4장 | `merge_sort`, `merge`, `sort_value` | 날짜 / 작성자 기준 정렬 | 병합 정렬 |
-| 5장 | `parent_first_order` | 부모가 먼저 나오는 순서 | 위상 정렬 |
-| 5장 | `find_shortest_path`, `count_steps_from`, `neighbors` | 두 커밋 사이의 최단 경로 | BFS |
-| 5장 | `find_ancestors` | 모든 조상 찾기 | BFS |
-| 6장 | `MiniGit` | 명령어 파싱, 실행, 출력 문자열 생성 | CLI |
-| 7장 | `main` | 입력 → 실행 → 출력 반복 | REPL |
+| 장 | 클래스 / 함수 | 하는 일 |
+| --- | --- | --- |
+| 1장 | `Commit` | 커밋 노드 (hash, message, author, timestamp, parents) |
+| 1장 | `HashGenerator` | 세션 내에서 겹치지 않는 hash 생성 |
+| 2장 | `InvertedIndex`, `tokenize` | 역색인: 키워드 / 작성자 → 커밋 hash 목록 |
+| 3장 | `Repository` | 커밋 저장소(해시맵), 브랜치와 HEAD 관리 |
+| 4장 | `merge_sort`, `merge`, `sort_key` | 병합 정렬: 날짜 / 작성자 기준 |
+| 5장 | `topological_sort` | 위상 정렬: 부모가 먼저 나오는 순서 |
+| 5장 | `shortest_path`, `bfs_distances`, `neighbors` | BFS: 두 커밋 사이의 최단 경로 |
+| 5장 | `find_ancestors` | BFS: 모든 조상 찾기 |
+| 6장 | `MiniGit` | CLI: 명령어 파싱(`execute`), 명령별 처리(`cmd_*`), 출력 문자열 생성 |
+| 7장 | `main` | REPL: 입력 → 실행 → 출력 반복 |
 
 클래스와 함수별 자세한 설명은 [docs/CODE_GUIDE.md](docs/CODE_GUIDE.md)에 있습니다.
 외부 라이브러리 없이 표준 라이브러리 `hashlib`, `shlex`, `datetime`만 사용합니다.
@@ -176,7 +176,7 @@ flowchart LR
 
 ### 2. HEAD와 브랜치는 무엇을 가리키나?
 
-`HEAD`는 현재 브랜치 이름이고, 코드에서는 `current_branch`에 저장합니다.
+`HEAD`는 현재 브랜치 이름이고, 코드에서는 `Repository.head`에 저장합니다.
 각 브랜치는 마지막 커밋의 hash를 저장합니다.
 다음 표는 위 그림이 만들어지는 과정입니다.
 
@@ -204,7 +204,7 @@ commits                       branches
   c1 -> Commit(parents=[])       main    -> c3
   c2 -> Commit(parents=[c1])     feature -> c2
   c3 -> Commit(parents=[c1])
-                              current_branch = "main"
+                              head = "main"
 children
   c1 -> [c2, c3]
   c2 -> []
@@ -217,7 +217,7 @@ children
 
 Mini Git의 hash는 `카운터:작성자:메시지`를 SHA-1으로 바꾼 뒤 앞 7자리를 사용합니다.
 이미 사용한 값이면 카운터를 증가시켜 다시 만듭니다. 카운터와 사용한 hash 집합은
-`Repository`가 아니라 `HashMaker`가 가지고, `MiniGit`이 `HashMaker` 하나를 계속 씁니다.
+`Repository`가 아니라 `HashGenerator`가 가지고, `MiniGit`이 `HashGenerator` 하나를 계속 씁니다.
 그래서 `INIT`으로 저장소를 새로 만들어도 프로그램 종료 전까지 hash가 겹치지 않습니다.
 
 ## 그림으로 이해하는 알고리즘
@@ -235,9 +235,9 @@ flowchart LR
 ```
 
 큐는 먼저 넣은 것을 먼저 꺼내는 자료구조입니다. 남은 부모 수가 0인 커밋만 큐에 넣습니다.
-코드에서는 리스트 `line`과 "지금 처리할 위치" `position`으로 큐를 만듭니다.
+코드에서는 리스트 `queue`와 "다음에 꺼낼 위치" `front`로 큐를 만듭니다.
 앞에서 원소를 빼는 대신 위치만 한 칸 옮기므로 꺼내는 비용이 O(1)이고,
-위상 정렬에서는 `line`에 쌓인 순서가 그대로 출력 순서가 됩니다.
+위상 정렬에서는 `queue`에 쌓인 순서가 그대로 출력 순서가 됩니다.
 PATH와 ANCESTORS의 BFS도 같은 방식의 큐를 씁니다.
 
 | 단계 | 큐: 왼쪽부터 꺼냄 | 출력한 커밋 | 처리 내용 |
@@ -361,7 +361,7 @@ flowchart TD
 
 비교 값이 같으면 왼쪽 원소를 먼저 선택합니다(`<=`). 그래서 같은 timestamp나
 작성자 이름을 가진 커밋은 원래의 생성 순서를 유지합니다. 이를 **안정 정렬**이라고 합니다.
-비교할 값은 `sort_value`가 `sort_by`(`"date"` 또는 `"author"`)에 따라 골라 줍니다.
+비교할 값은 `sort_key`가 `sort_by`(`"date"` 또는 `"author"`)에 따라 골라 줍니다.
 그래서 하나의 병합 정렬 구현으로 날짜와 작성자 정렬을 모두 처리합니다.
 
 | 항목 | 값 | 이유 |
@@ -376,7 +376,7 @@ flowchart TD
 ### 5. SEARCH: 역색인으로 후보 바로 찾기
 
 역색인은 **검색어 → 그 검색어를 가진 커밋 hash 목록**을 미리 저장한 자료구조입니다.
-코드에서는 `SearchBook` 클래스이고, 키워드용 `words`와 작성자용 `authors` 두 딕셔너리를 가집니다.
+코드에서는 `InvertedIndex` 클래스이고, 키워드용 `keyword_index`와 작성자용 `author_index` 두 딕셔너리를 가집니다.
 커밋 생성 시 메시지를 공백으로 나누고 소문자로 바꿔 등록합니다.
 같은 메시지에 같은 단어가 여러 번 나와도 그 커밋은 한 번만 등록합니다.
 
