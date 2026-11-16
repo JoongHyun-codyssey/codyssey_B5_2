@@ -137,7 +137,6 @@ Found 1 commit(s):
 | 6장 | `MiniGit` | CLI: 명령어 파싱(`execute`), 명령별 처리(`cmd_*`), 출력 문자열 생성 |
 | 7장 | `main` | REPL: 입력 → 실행 → 출력 반복 |
 
-클래스와 함수별 자세한 설명은 [docs/CODE_GUIDE.md](docs/CODE_GUIDE.md)에 있습니다.
 외부 라이브러리 없이 표준 라이브러리 `hashlib`, `shlex`, `datetime`만 사용합니다.
 
 ## 그림으로 이해하는 자료구조
